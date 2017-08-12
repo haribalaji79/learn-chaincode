@@ -63,6 +63,45 @@ func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface, function string
 	return nil, nil
 }
 
+func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
+	fmt.Println("query is running " + function)
+
+    // Handle different functions
+    if function == "read" {                            //read a variable
+        return t.read(stub, args)
+    }
+    fmt.Println("query did not find func: " + function)
+
+    return nil, errors.New("Received unknown function query: " + function)
+}
+
+func (t *SimpleChaincode) Login(stub shim.ChaincodeStubInterface, args []string) ([]byte, error) {
+	fmt.Println("Inside Login method")
+	var username, password, jsonResp string
+	var err error
+
+    if len(args) < 2 {
+        return nil, errors.New("Incorrect number of arguments. Expecting username and password")
+    }
+    username = args[0]
+		password = args[1]
+
+    valAsbytes, err := stub.GetState(username)
+		if err != nil {
+        jsonResp = "{\"Error\":\"Username not found " + username + "\"}"
+        return nil, errors.New(jsonResp)
+    }
+		var existingUser User
+		json.Unmarshal(valAsbytes, &existingUser)
+
+		if existingUser.Password != password {
+			jsonResp = "{\"Error\":\"Password does not match for " + username + "\"}"
+			return nil, errors.New(jsonResp)
+		}
+		fmt.Println("Login complete")
+    return valAsbytes, nil
+}
+
 func (t *SimpleChaincode) createUser(stub shim.ChaincodeStubInterface, args []string) ([]byte, error) {
 	fmt.Println("Creating user")
 
@@ -124,7 +163,6 @@ func (t *SimpleChaincode) createUser(stub shim.ChaincodeStubInterface, args []st
 		}
 
 	}
-
 }
 
 // Invoke is our entry point to invoke a chaincode function
@@ -132,12 +170,16 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface, function stri
 	fmt.Println("invoke is running " + function)
 
 	// Handle different functions
-	if function == "init" {													//initialize the chaincode state, used as reset
+	if function == "init" {//initialize the chaincode state, used as reset
 		return t.Init(stub, "init", args)
 	} else if function == "write" {
     return t.write(stub, args)
   } else if function == "createUser" {
 		return t.createUser(stub, args)
+	} else if function == "read" {
+		return t.read(stub, args)
+	} else if function == "login" {
+		return t.Login(stub, args)
 	}
 	fmt.Println("invoke did not find func: " + function)					//error
 
@@ -160,23 +202,6 @@ func (t *SimpleChaincode) write(stub shim.ChaincodeStubInterface, args []string)
 		return nil, err
 	}
 	return nil, nil
-}
-
-// Query is our entry point for queries
-func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
-	fmt.Println("query is running " + function)
-
-	// Handle different functions
-	if function == "dummy_query" {											//read a variable
-		fmt.Println("hi there " + function)						//error
-		return nil, nil;
-	}
-	if function == "read" {                            //read a variable
-      return t.read(stub, args)
-  }
-	fmt.Println("query did not find func: " + function)						//error
-
-	return nil, errors.New("Received unknown function query: " + function)
 }
 
 func (t *SimpleChaincode) read(stub shim.ChaincodeStubInterface, args []string) ([]byte, error) {
