@@ -17,14 +17,28 @@ limitations under the License.
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+
 
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 )
 
 // SimpleChaincode example simple Chaincode implementation
 type SimpleChaincode struct {
+}
+
+type LoginInfo struct {
+	Username	string	`json:"userName"`
+	Password	string	`json:"password"`
+}
+
+type User struct {
+	Username 		string `json:"userName"`
+	Role		 		string `json:"role"`
+	Password		string `json:"password"`
 }
 
 // ============================================================================================================================
@@ -39,15 +53,78 @@ func main() {
 
 // Init resets all the things
 func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
-	if len(args) != 1 {
-		return nil, errors.New("Incorrect number of arguments. Expecting 1")
-	}
-	err := stub.PutState("hello_world", []byte(args[0]))
-	    if err != nil {
-	        return nil, err
-	    }
+	fmt.Println("Init firing. Function will be ignored: " + function)
 
-	    return nil, nil
+	// Initialize the collection of commercial paper keys
+	fmt.Println("Initializing user accounts")
+	t.createUser(stub, []string{"importerBank", "importerBank", "Importer Bank"})
+
+	fmt.Println("Initialization complete")
+	return nil, nil
+}
+
+func (t *SimpleChaincode) createUser(stub shim.ChaincodeStubInterface, args []string) ([]byte, error) {
+	fmt.Println("Creating user")
+
+	// Obtain the username to associate with the account
+	if len(args) != 3 {
+		fmt.Println("Error obtaining username/password/role")
+		return nil, errors.New("createUser accepts 3 arguments (username, password, role)")
+	}
+	username := args[0]
+	password := args[1]
+	role := args[2]
+
+	// Build an user object for the user
+	var user = User{Username: username, Password: password, Role: role}
+	userBytes, err := json.Marshal(&user)
+	if err != nil {
+		fmt.Println("error creating user" + user.Username)
+		return nil, errors.New("Error creating user " + user.Username)
+	}
+
+	fmt.Println("Attempting to get state of any existing account for " + user.Username)
+	existingBytes, err := stub.GetState(user.Username)
+	if err == nil {
+
+		var existingUser User
+		err = json.Unmarshal(existingBytes, &existingUser)
+		if err != nil {
+			fmt.Println("Error unmarshalling user " + user.Username + "\n--->: " + err.Error())
+
+			if strings.Contains(err.Error(), "unexpected end") {
+				fmt.Println("No data means existing user found for " + user.Username + ", initializing user.")
+				err = stub.PutState(user.Username, userBytes)
+
+				if err == nil {
+					fmt.Println("created user" + user.Username)
+					return nil, nil
+				} else {
+					fmt.Println("failed to create initialize user for " + user.Username)
+					return nil, errors.New("failed to initialize an account for " + user.Username + " => " + err.Error())
+				}
+			} else {
+				return nil, errors.New("Error unmarshalling existing account " + user.Username)
+			}
+		} else {
+			fmt.Println("Account already exists for " + user.Username + " " + existingUser.Username)
+			return nil, errors.New("Can't reinitialize existing user " + user.Username)
+		}
+	} else {
+
+		fmt.Println("No existing user found for " + user.Username + ", initializing user.")
+		err = stub.PutState(user.Username, userBytes)
+
+		if err == nil {
+			fmt.Println("created user" + user.Username)
+			return nil, nil
+		} else {
+			fmt.Println("failed to create initialize user for " + user.Username)
+			return nil, errors.New("failed to initialize an user for " + user.Username + " => " + err.Error())
+		}
+
+	}
+
 }
 
 // Invoke is our entry point to invoke a chaincode function
@@ -59,7 +136,9 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface, function stri
 		return t.Init(stub, "init", args)
 	} else if function == "write" {
     return t.write(stub, args)
-  }
+  } else if function == "createUser" {
+		return t.createUser(stub, args)
+	}
 	fmt.Println("invoke did not find func: " + function)					//error
 
 	return nil, errors.New("Received unknown function invocation: " + function)
